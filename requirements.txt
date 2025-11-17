@@ -1,0 +1,21 @@
+# Core dependencies
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Market data (Phase 5+)
+alpaca-trade-api>=2.0.0
+
+# Database (Phase 4+)
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# LLM integration (Phase 2+)
+langchain>=0.1.0
+langraph>=0.0.1
+
+# Utilities
+python-dotenv>=1.0.0
