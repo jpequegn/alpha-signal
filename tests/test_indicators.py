@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from src.indicators import SMA
+from src.indicators import SMA, EMA
 
 
 class TestSMA:
@@ -138,3 +138,140 @@ class TestSMAValidation:
         # Most prices in downtrend should be below SMA
         below_sma = np.sum(prices_after_nan <= valid_result)
         assert below_sma > len(valid_result) * 0.8  # At least 80% below SMA
+
+
+class TestEMA:
+    """Test cases for Exponential Moving Average indicator."""
+
+    def test_ema_basic_calculation(self):
+        """Test EMA with known values."""
+        prices = np.array([100, 101, 102, 103, 104, 105], dtype=float)
+        ema = EMA(period=3)
+        result = ema(prices)
+
+        # First 2 values should be NaN
+        assert np.isnan(result[0])
+        assert np.isnan(result[1])
+
+        # Index 2: initialized with SMA(3) = 101
+        assert np.isclose(result[2], 101.0)
+
+        # Index 3: EMA = 103 * 0.5 + 101 * 0.5 = 102
+        assert np.isclose(result[3], 102.0)
+
+        # Index 4: EMA = 104 * 0.5 + 102 * 0.5 = 103
+        assert np.isclose(result[4], 103.0)
+
+    def test_ema_alpha_property(self):
+        """Test alpha smoothing factor calculation."""
+        # Alpha = 2 / (period + 1)
+        ema3 = EMA(period=3)
+        assert np.isclose(ema3.alpha, 2.0 / 4.0)  # 0.5
+
+        ema5 = EMA(period=5)
+        assert np.isclose(ema5.alpha, 2.0 / 6.0)  # ~0.333
+
+        ema12 = EMA(period=12)
+        assert np.isclose(ema12.alpha, 2.0 / 13.0)  # ~0.1538
+
+        ema26 = EMA(period=26)
+        assert np.isclose(ema26.alpha, 2.0 / 27.0)  # ~0.0741
+
+    def test_ema_responsiveness_vs_sma(self, sample_prices):
+        """Test that EMA responds faster to changes than SMA."""
+        sma = SMA(period=10)
+        ema = EMA(period=10)
+
+        sma_result = sma(sample_prices)
+        ema_result = ema(sample_prices)
+
+        # Both should have same NaN count
+        assert np.sum(np.isnan(sma_result)) == np.sum(np.isnan(ema_result))
+
+        # Get valid values (after NaN period)
+        valid_sma = sma_result[~np.isnan(sma_result)]
+        valid_ema = ema_result[~np.isnan(ema_result)]
+        valid_prices = sample_prices[-len(valid_sma):]
+
+        # EMA should have more variance than SMA (more responsive)
+        sma_variance = np.var(valid_sma)
+        ema_variance = np.var(valid_ema)
+        assert ema_variance > sma_variance * 0.5  # EMA more responsive
+
+    def test_ema_with_constant_values(self):
+        """Test EMA with constant prices."""
+        prices = np.full(50, 100.0)
+        ema = EMA(period=20)
+        result = ema(prices)
+
+        # First 19 values are NaN
+        assert np.all(np.isnan(result[:19]))
+
+        # All EMA values should equal 100.0
+        assert np.all(np.isclose(result[19:], 100.0))
+
+    def test_ema_insufficient_data(self):
+        """Test EMA when data length < period."""
+        prices = np.array([100, 101, 102])
+        ema = EMA(period=20)
+        result = ema(prices)
+
+        # All values should be NaN
+        assert np.all(np.isnan(result))
+
+    def test_ema_different_periods(self):
+        """Test EMA with different periods."""
+        prices = np.linspace(100, 150, 50)
+
+        # Test period=5
+        ema5 = EMA(period=5)
+        result5 = ema5(prices)
+        assert np.sum(np.isnan(result5)) == 4
+        assert len(result5) == 50
+
+        # Test period=12 (common in trading)
+        ema12 = EMA(period=12)
+        result12 = ema12(prices)
+        assert np.sum(np.isnan(result12)) == 11
+        assert len(result12) == 50
+
+        # Test period=26 (common in trading)
+        ema26 = EMA(period=26)
+        result26 = ema26(prices)
+        assert np.sum(np.isnan(result26)) == 25
+        assert len(result26) == 50
+
+
+class TestEMAValidation:
+    """Test EMA validation and properties."""
+
+    def test_ema_with_trend(self, uptrend_prices):
+        """Test EMA during uptrend - should follow trend closely."""
+        ema = EMA(period=10)
+        result = ema(uptrend_prices)
+
+        # EMA should be between min and max prices
+        valid_result = result[~np.isnan(result)]
+        assert np.all(valid_result >= np.nanmin(uptrend_prices))
+        assert np.all(valid_result <= np.nanmax(uptrend_prices))
+
+    def test_ema_smoothing_property(self, sample_prices):
+        """Test that EMA is smoother than raw prices."""
+        ema = EMA(period=20)
+        result = ema(sample_prices)
+
+        # EMA should reduce variance compared to raw prices
+        valid_result = result[~np.isnan(result)]
+        ema_variance = np.var(valid_result)
+        price_variance = np.var(sample_prices)
+
+        assert ema_variance < price_variance
+
+    def test_ema_repr(self):
+        """Test string representation of EMA."""
+        ema = EMA(period=12)
+        repr_str = repr(ema)
+
+        assert "EMA" in repr_str
+        assert "period=12" in repr_str
+        assert "alpha=" in repr_str
