@@ -1,6 +1,110 @@
 # GitHub Issues for Phase 1
 
-This document contains templates for creating 5 GitHub issues for Phase 1 tasks. Copy the content for each issue into GitHub.
+This document contains templates for creating 6 GitHub issues for Phase 1: 1 setup task (Task 0) + 5 indicator tasks (Tasks 1.1-1.5).
+
+**Important**: Complete Task 0 (Setup & Infrastructure) first - all other tasks depend on it.
+
+---
+
+## Issue #0: Task 0 - Repository Setup & Infrastructure (PREREQUISITE)
+
+**Title**: Task 0: Repository Setup & Infrastructure - Implement Base Classes & Backtester
+
+**Labels**: `phase-1`, `setup`, `prerequisite`
+
+**Assignee**: (yourself)
+
+**Milestone**: Phase 1: Build Custom Indicators
+
+**Description**:
+
+This is the **foundational task** that must be completed before starting any indicator implementations (Tasks 1.1-1.5). It establishes the shared infrastructure that all indicators depend on.
+
+**What You'll Do**:
+- Create the directory structure
+- Implement the `Indicator` abstract base class
+- Implement the `Backtester` framework
+- Set up pytest configuration and fixtures
+- Write infrastructure validation tests
+- Verify everything works end-to-end
+
+**What You'll Learn**:
+- Python package structure and imports
+- Abstract base classes and interface design
+- Composition patterns for building reusable components
+- Test fixtures for data-driven testing
+- NumPy best practices
+- Professional project organization
+
+**Why This Matters**:
+All 5 indicators (SMA, EMA, RSI, MACD, Bollinger Bands) inherit from the base `Indicator` class. The backtester validates that signals work correctly. Without this foundation, each task would duplicate code and have no consistent testing framework.
+
+**Requirements**:
+- [ ] Create directory structure as specified
+- [ ] Implement `src/indicators/base.py` with `Indicator` abstract base class
+- [ ] Implement `src/backtester/engine.py` with backtester function and results dataclass
+- [ ] Create all `__init__.py` package files
+- [ ] Create `tests/conftest.py` with 5 test fixtures
+- [ ] Create `tests/test_setup.py` with 9 infrastructure validation tests
+- [ ] All 9 tests passing
+- [ ] 100% code coverage on src/indicators and src/backtester
+- [ ] Document technology choices (Why NumPy? Why pytest? Why abstract base class?)
+
+**Technical Details**:
+
+**Indicator Base Class**:
+```python
+class Indicator(ABC):
+    def __init__(self, period: int): ...
+    @abstractmethod
+    def calculate(self, data: np.ndarray) -> np.ndarray: ...
+    def __call__(self, data): ...
+    def _validate_input(self, data): ...
+```
+
+**Backtester**:
+```python
+def backtest_signal(prices, signals, initial_capital=10000, transaction_cost=0.001):
+    # Returns: BacktestResult with metrics
+    # - cumulative_return
+    # - sharpe_ratio
+    # - max_drawdown
+    # - win_rate
+    # - num_trades
+```
+
+**Test Fixtures** (in conftest.py):
+- `sample_prices` - 100 realistic prices
+- `constant_prices` - 50 constant values (edge case)
+- `small_price_array` - 10 prices (minimal)
+- `uptrend_prices` - Strongly uptrending
+- `downtrend_prices` - Strongly downtrending
+
+**Success Criteria**:
+- ✅ Directory structure created
+- ✅ Indicator base class prevents instantiation (abstract)
+- ✅ Backtester calculates metrics correctly
+- ✅ All 9 setup tests passing
+- ✅ 100% code coverage
+- ✅ Imports work: `from src.indicators import Indicator`
+- ✅ Imports work: `from src.backtester import backtest_signal`
+- ✅ Technology choices documented
+
+**Resources**:
+- [docs/phase1/TASK_0_SETUP.md](./docs/phase1/TASK_0_SETUP.md) - Complete implementation guide with all code
+- [Python ABC Documentation](https://docs.python.org/3/library/abc.html)
+- [pytest Fixtures](https://docs.pytest.org/en/stable/fixture.html)
+
+**Estimated Time**: 3-4 hours
+
+**Blocking**: All other Phase 1 tasks depend on this
+
+**After Completion**:
+Once Task 0 is complete, you can immediately start Task 1.1 (SMA) because:
+- Base class is ready to inherit from
+- Test fixtures are ready to use
+- Backtester is ready to validate signals
+- Project structure is professional and organized
 
 ---
 
