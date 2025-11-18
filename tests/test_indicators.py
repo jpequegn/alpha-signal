@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from src.indicators import SMA, EMA
+from src.indicators import SMA, EMA, RSI
 
 
 class TestSMA:
@@ -275,3 +275,163 @@ class TestEMAValidation:
         assert "EMA" in repr_str
         assert "period=12" in repr_str
         assert "alpha=" in repr_str
+
+
+class TestRSI:
+    """Test cases for Relative Strength Index indicator."""
+
+    def test_rsi_basic_calculation(self):
+        """Test RSI with known uptrend data."""
+        # Uptrend: all prices increasing
+        prices = np.array([44.0, 44.34, 44.09, 43.61, 44.33, 44.83, 45.10, 45.42])
+        rsi = RSI(period=3)
+        result = rsi(prices)
+
+        # First period values should be NaN
+        assert np.sum(np.isnan(result[:3])) == 3
+
+        # RSI values should be in 0-100 range
+        valid_rsi = result[~np.isnan(result)]
+        assert np.all(valid_rsi >= 0)
+        assert np.all(valid_rsi <= 100)
+
+    def test_rsi_bounds(self):
+        """Test that RSI always stays within 0-100."""
+        prices = np.random.uniform(90, 110, 100)
+        rsi = RSI(period=14)
+        result = rsi(prices)
+
+        # All non-NaN values should be between 0 and 100
+        valid_rsi = result[~np.isnan(result)]
+        assert np.all(valid_rsi >= 0)
+        assert np.all(valid_rsi <= 100)
+
+    def test_rsi_uptrend(self, uptrend_prices):
+        """Test RSI during strong uptrend."""
+        rsi = RSI(period=14)
+        result = rsi(uptrend_prices)
+
+        # During uptrend, RSI should be high (>50 mostly)
+        valid_rsi = result[~np.isnan(result)]
+        assert np.mean(valid_rsi) > 50  # Average RSI should be > 50 in uptrend
+
+    def test_rsi_downtrend(self, downtrend_prices):
+        """Test RSI during strong downtrend."""
+        rsi = RSI(period=14)
+        result = rsi(downtrend_prices)
+
+        # During downtrend, RSI should be low (<50 mostly)
+        valid_rsi = result[~np.isnan(result)]
+        assert np.mean(valid_rsi) < 50  # Average RSI should be < 50 in downtrend
+
+    def test_rsi_insufficient_data(self):
+        """Test RSI with insufficient data."""
+        prices = np.array([100, 101, 102])
+        rsi = RSI(period=14)
+        result = rsi(prices)
+
+        # All values should be NaN
+        assert np.all(np.isnan(result))
+
+    def test_rsi_constant_prices(self):
+        """Test RSI with constant prices."""
+        prices = np.full(50, 100.0)
+        rsi = RSI(period=14)
+        result = rsi(prices)
+
+        # First 14 values are NaN
+        assert np.sum(np.isnan(result[:14])) == 14
+
+        # With no gains or losses, RSI should be 50 (neutral)
+        valid_rsi = result[~np.isnan(result)]
+        # When avg_gain = avg_loss, RSI = 100 - (100/(1+1)) = 50
+        assert np.all(np.isclose(valid_rsi, 50.0))
+
+    def test_rsi_period_validation(self):
+        """Test RSI with different periods."""
+        prices = np.linspace(100, 150, 100)
+
+        # Period 14 (standard)
+        rsi14 = RSI(period=14)
+        result14 = rsi14(prices)
+        assert np.sum(np.isnan(result14)) == 14
+
+        # Period 7 (shorter)
+        rsi7 = RSI(period=7)
+        result7 = rsi7(prices)
+        assert np.sum(np.isnan(result7)) == 7
+
+        # Period 21 (longer)
+        rsi21 = RSI(period=21)
+        result21 = rsi21(prices)
+        assert np.sum(np.isnan(result21)) == 21
+
+
+class TestRSISignals:
+    """Test RSI signal generation."""
+
+    def test_rsi_signal_generation_basic(self):
+        """Test basic RSI signal generation."""
+        prices = np.array([44.0, 44.34, 44.09, 43.61, 44.33, 44.83, 45.10, 45.42])
+        rsi = RSI(period=3)
+        rsi_values = rsi(prices)
+
+        signals = rsi.get_signals(rsi_values, overbought=70, oversold=30)
+
+        # Should have same length as input
+        assert len(signals) == len(prices)
+
+        # Signals should be -1, 0, or 1
+        assert np.all(np.isin(signals, [-1, 0, 1]))
+
+    def test_rsi_overbought_signal(self):
+        """Test overbought signal generation."""
+        # Create strong uptrend to trigger overbought
+        prices = np.linspace(100, 110, 50)
+        rsi = RSI(period=10)
+        rsi_values = rsi(prices)
+
+        signals = rsi.get_signals(rsi_values, overbought=70, oversold=30)
+
+        # In strong uptrend, should have overbought signals (1)
+        valid_signals = signals[~np.isnan(rsi_values)]
+        assert np.sum(valid_signals == 1) > 0  # Should have some overbought
+
+    def test_rsi_oversold_signal(self):
+        """Test oversold signal generation."""
+        # Create strong downtrend to trigger oversold
+        prices = np.linspace(110, 100, 50)
+        rsi = RSI(period=10)
+        rsi_values = rsi(prices)
+
+        signals = rsi.get_signals(rsi_values, overbought=70, oversold=30)
+
+        # In strong downtrend, should have oversold signals (-1)
+        valid_signals = signals[~np.isnan(rsi_values)]
+        assert np.sum(valid_signals == -1) > 0  # Should have some oversold
+
+    def test_rsi_custom_thresholds(self):
+        """Test RSI with custom overbought/oversold thresholds."""
+        prices = np.random.uniform(90, 110, 100)
+        rsi = RSI(period=14)
+        rsi_values = rsi(prices)
+
+        # Custom thresholds
+        signals = rsi.get_signals(rsi_values, overbought=80, oversold=20)
+
+        # Should have same length as input
+        assert len(signals) == len(prices)
+        assert np.all(np.isin(signals, [-1, 0, 1]))
+
+    def test_rsi_signal_nan_handling(self):
+        """Test that signals properly handle NaN values."""
+        prices = np.array([100, 101, 102, 103, 104, 105])
+        rsi = RSI(period=3)
+        rsi_values = rsi(prices)
+
+        signals = rsi.get_signals(rsi_values)
+
+        # NaN RSI should give 0 signal
+        for i, (rsi_val, signal) in enumerate(zip(rsi_values, signals)):
+            if np.isnan(rsi_val):
+                assert signal == 0
