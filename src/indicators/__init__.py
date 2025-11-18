@@ -2,6 +2,6 @@
 
 from .base import Indicator
 from .moving_average import SMA, EMA
-from .momentum import RSI
+from .momentum import RSI, MACD
 
-__all__ = ["Indicator", "SMA", "EMA", "RSI"]
+__all__ = ["Indicator", "SMA", "EMA", "RSI", "MACD"]

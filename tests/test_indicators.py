@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from src.indicators import SMA, EMA, RSI
+from src.indicators import SMA, EMA, RSI, MACD
 
 
 class TestSMA:
@@ -435,3 +435,226 @@ class TestRSISignals:
         for i, (rsi_val, signal) in enumerate(zip(rsi_values, signals)):
             if np.isnan(rsi_val):
                 assert signal == 0
+
+
+class TestMACD:
+    """Test cases for MACD (Moving Average Convergence Divergence) indicator."""
+
+    def test_macd_basic_calculation(self):
+        """Test MACD returns tuple of three arrays."""
+        prices = np.linspace(100, 110, 100)
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        # Should return tuple of three arrays
+        assert isinstance(macd_line, np.ndarray)
+        assert isinstance(signal_line, np.ndarray)
+        assert isinstance(histogram, np.ndarray)
+
+        # All arrays should have same length as input
+        assert len(macd_line) == len(prices)
+        assert len(signal_line) == len(prices)
+        assert len(histogram) == len(prices)
+
+    def test_macd_composition_with_ema(self):
+        """Test that MACD correctly composes EMAs."""
+        prices = np.linspace(100, 110, 100)
+
+        # Calculate MACD
+        macd = MACD(fast=12, slow=26, signal=9)
+        macd_line, signal_line, histogram = macd(prices)
+
+        # Calculate EMAs independently
+        ema_fast = EMA(period=12)
+        ema_slow = EMA(period=26)
+        fast_vals = ema_fast(prices)
+        slow_vals = ema_slow(prices)
+
+        # MACD line should equal EMA(12) - EMA(26)
+        expected_macd = fast_vals - slow_vals
+        valid_idx = ~np.isnan(expected_macd)
+        assert np.allclose(
+            macd_line[valid_idx], expected_macd[valid_idx], equal_nan=True
+        )
+
+    def test_macd_nan_initialization(self):
+        """Test that MACD has proper NaN initialization."""
+        prices = np.linspace(100, 110, 100)
+        macd = MACD(fast=12, slow=26, signal=9)
+        macd_line, signal_line, histogram = macd(prices)
+
+        # MACD line should have NaN for first (slow-1) values
+        # because EMA(26) requires 26 values
+        assert np.sum(np.isnan(macd_line[:25])) == 25
+
+        # Signal line should have more NaN due to EMA(9) applied to MACD
+        # Total: slow - 1 + signal - 1 = 25 + 8 = 33
+        assert np.sum(np.isnan(signal_line[:33])) == 33
+
+        # Histogram should match signal line NaN pattern
+        assert np.sum(np.isnan(histogram[:33])) == 33
+
+    def test_macd_histogram_calculation(self):
+        """Test that histogram = MACD - Signal."""
+        prices = np.linspace(100, 110, 100)
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        # Histogram should equal MACD - Signal
+        expected_histogram = macd_line - signal_line
+        assert np.allclose(histogram, expected_histogram, equal_nan=True)
+
+    def test_macd_uptrend_behavior(self):
+        """Test MACD line behavior during uptrend."""
+        # Create uptrend with enough data
+        prices = np.linspace(100, 130, 100)
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        # MACD line should increase in uptrend (fast EMA > slow EMA)
+        valid_macd = macd_line[~np.isnan(macd_line)]
+        assert len(valid_macd) > 0
+        # In uptrend, MACD line should be positive
+        assert np.all(valid_macd > 0)
+
+    def test_macd_downtrend_behavior(self):
+        """Test MACD line behavior during downtrend."""
+        # Create downtrend with enough data
+        prices = np.linspace(130, 100, 100)
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        # MACD line should decrease in downtrend (fast EMA < slow EMA)
+        valid_macd = macd_line[~np.isnan(macd_line)]
+        assert len(valid_macd) > 0
+        # In downtrend, MACD line should be negative
+        assert np.all(valid_macd < 0)
+
+    def test_macd_insufficient_data(self):
+        """Test MACD with insufficient data."""
+        prices = np.array([100, 101, 102])
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        # With insufficient data, should return all NaN
+        assert np.all(np.isnan(macd_line))
+        assert np.all(np.isnan(signal_line))
+        assert np.all(np.isnan(histogram))
+
+    def test_macd_constant_prices(self):
+        """Test MACD with constant prices."""
+        prices = np.full(100, 100.0)
+        macd = MACD(fast=12, slow=26, signal=9)
+        macd_line, signal_line, histogram = macd(prices)
+
+        # With constant prices, MACD line should be ~0 (EMA(12) - EMA(26) = 100 - 100)
+        # MACD line initializes at index 25 (slow-1)
+        valid_macd = macd_line[~np.isnan(macd_line)]
+        assert len(valid_macd) > 0
+        assert np.allclose(valid_macd, 0.0, atol=0.01)
+
+    def test_macd_custom_periods(self):
+        """Test MACD with custom periods."""
+        prices = np.linspace(100, 120, 100)
+
+        # Test standard periods
+        macd_std = MACD(fast=12, slow=26, signal=9)
+        macd_line1, signal_line1, hist1 = macd_std(prices)
+        assert len(macd_line1) == 100
+
+        # Test custom periods
+        macd_custom = MACD(fast=5, slow=10, signal=3)
+        macd_line2, signal_line2, hist2 = macd_custom(prices)
+        assert len(macd_line2) == 100
+
+        # Different periods should give different results
+        assert not np.allclose(macd_line1[50:], macd_line2[50:])
+
+    def test_macd_period_validation(self):
+        """Test MACD parameter validation."""
+        prices = np.linspace(100, 110, 100)
+
+        # Invalid fast period
+        with pytest.raises(ValueError):
+            MACD(fast=0, slow=26, signal=9)(prices)
+
+        # Invalid slow period
+        with pytest.raises(ValueError):
+            MACD(fast=12, slow=-1, signal=9)(prices)
+
+        # Invalid signal period
+        with pytest.raises(ValueError):
+            MACD(fast=12, slow=26, signal=0)(prices)
+
+
+class TestMACDSignals:
+    """Test MACD signal generation."""
+
+    def test_macd_signal_generation_basic(self):
+        """Test basic MACD signal generation."""
+        prices = np.linspace(100, 110, 100)
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        signals = macd.get_signals(macd_line, signal_line)
+
+        # Should have same length as input
+        assert len(signals) == len(prices)
+
+        # Signals should be -1, 0, or 1
+        assert np.all(np.isin(signals, [-1, 0, 1]))
+
+    def test_macd_signal_zero_when_nan(self):
+        """Test that signals are 0 when MACD or signal line is NaN."""
+        prices = np.linspace(100, 110, 100)
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        signals = macd.get_signals(macd_line, signal_line)
+
+        # When MACD or signal line is NaN, signal should be 0
+        for i, (m, s, sig) in enumerate(zip(macd_line, signal_line, signals)):
+            if np.isnan(m) or np.isnan(s):
+                assert sig == 0
+
+    def test_macd_signal_consistency(self):
+        """Test that signal generation is consistent."""
+        prices = np.linspace(110, 100, 100)
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        signals = macd.get_signals(macd_line, signal_line)
+
+        # All signals should be valid (-1, 0, or 1)
+        assert np.all(np.isin(signals, [-1, 0, 1]))
+
+    def test_macd_signal_nan_handling(self):
+        """Test that signals properly handle NaN values."""
+        prices = np.array([100, 101, 102, 103, 104, 105])
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(prices)
+
+        signals = macd.get_signals(macd_line, signal_line)
+
+        # NaN MACD should give 0 signal
+        for i, (macd_val, signal) in enumerate(zip(macd_line, signals)):
+            if np.isnan(macd_val):
+                assert signal == 0
+
+    def test_macd_signal_with_realistic_data(self, sample_prices):
+        """Test MACD signals with realistic price data."""
+        macd = MACD()
+        macd_line, signal_line, histogram = macd(sample_prices)
+
+        signals = macd.get_signals(macd_line, signal_line)
+
+        # Should have same length
+        assert len(signals) == len(sample_prices)
+
+        # All signals should be valid
+        assert np.all(np.isin(signals, [-1, 0, 1]))
+
+        # Signals should be 0 where MACD or signal line are NaN
+        for i, (m, s) in enumerate(zip(macd_line, signal_line)):
+            if np.isnan(m) or np.isnan(s):
+                assert signals[i] == 0
