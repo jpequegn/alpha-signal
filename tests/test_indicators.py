@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from src.indicators import SMA, EMA, RSI, MACD
+from src.indicators import SMA, EMA, RSI, MACD, BollingerBands
 
 
 class TestSMA:
@@ -658,3 +658,255 @@ class TestMACDSignals:
         for i, (m, s) in enumerate(zip(macd_line, signal_line)):
             if np.isnan(m) or np.isnan(s):
                 assert signals[i] == 0
+
+
+class TestBollingerBands:
+    """Test cases for Bollinger Bands volatility indicator."""
+
+    def test_bollinger_bands_basic_calculation(self):
+        """Test Bollinger Bands returns three arrays."""
+        prices = np.linspace(100, 110, 100)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        # Should return three arrays
+        assert isinstance(upper, np.ndarray)
+        assert isinstance(middle, np.ndarray)
+        assert isinstance(lower, np.ndarray)
+
+        # All arrays should have same length as input
+        assert len(upper) == len(prices)
+        assert len(middle) == len(prices)
+        assert len(lower) == len(prices)
+
+    def test_bollinger_bands_band_ordering(self):
+        """Test that upper band > middle band > lower band."""
+        prices = np.linspace(100, 110, 100)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        # Get valid indices (not NaN)
+        valid_idx = ~np.isnan(upper)
+
+        # Upper should always be > middle, middle > lower
+        assert np.all(upper[valid_idx] >= middle[valid_idx])
+        assert np.all(middle[valid_idx] >= lower[valid_idx])
+
+    def test_bollinger_bands_nan_initialization(self):
+        """Test that bands have proper NaN initialization."""
+        prices = np.linspace(100, 110, 100)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        # First (period-1) values should be NaN
+        assert np.sum(np.isnan(upper[:19])) == 19
+        assert np.sum(np.isnan(middle[:19])) == 19
+        assert np.sum(np.isnan(lower[:19])) == 19
+
+    def test_bollinger_bands_with_constant_prices(self):
+        """Test Bollinger Bands with constant prices (zero volatility)."""
+        prices = np.full(100, 100.0)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        # With constant prices, std dev = 0, so bands should equal middle
+        valid_idx = ~np.isnan(upper)
+        valid_upper = upper[valid_idx]
+        valid_middle = middle[valid_idx]
+        valid_lower = lower[valid_idx]
+
+        # Middle should be 100 (constant price)
+        assert np.allclose(valid_middle, 100.0)
+
+        # Upper and lower should equal middle (no volatility)
+        assert np.allclose(valid_upper, valid_middle, atol=0.01)
+        assert np.allclose(valid_lower, valid_middle, atol=0.01)
+
+    def test_bollinger_bands_insufficient_data(self):
+        """Test Bollinger Bands with insufficient data."""
+        prices = np.array([100, 101, 102])
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        # All values should be NaN
+        assert np.all(np.isnan(upper))
+        assert np.all(np.isnan(middle))
+        assert np.all(np.isnan(lower))
+
+    def test_bollinger_bands_custom_num_std(self):
+        """Test Bollinger Bands with custom num_std parameter."""
+        prices = np.linspace(100, 120, 100)
+
+        # Standard 2.0 std dev
+        bb2 = BollingerBands(period=20, num_std=2.0)
+        upper2, middle2, lower2 = bb2(prices)
+
+        # Wider bands with 3.0 std dev
+        bb3 = BollingerBands(period=20, num_std=3.0)
+        upper3, middle3, lower3 = bb3(prices)
+
+        # Get valid indices
+        valid_idx = ~np.isnan(upper2)
+
+        # 3.0 std dev should give wider bands than 2.0
+        width2 = upper2[valid_idx] - lower2[valid_idx]
+        width3 = upper3[valid_idx] - lower3[valid_idx]
+
+        assert np.all(width3 > width2)
+
+    def test_bollinger_bands_period_validation(self):
+        """Test Bollinger Bands parameter validation."""
+        prices = np.linspace(100, 110, 100)
+
+        # Invalid period
+        with pytest.raises(ValueError):
+            BollingerBands(period=0, num_std=2)(prices)
+
+        # Invalid num_std
+        with pytest.raises(ValueError):
+            BollingerBands(period=20, num_std=0)(prices)
+
+        with pytest.raises(ValueError):
+            BollingerBands(period=20, num_std=-1)(prices)
+
+
+class TestBollingerBandsBandwidth:
+    """Test Bollinger Bands bandwidth calculations."""
+
+    def test_bandwidth_calculation(self):
+        """Test band width (absolute difference)."""
+        prices = np.linspace(100, 120, 100)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        bandwidth = bb.get_bandwidth(upper, lower)
+
+        # Should have same length
+        assert len(bandwidth) == len(prices)
+
+        # Bandwidth should equal upper - lower
+        expected = upper - lower
+        assert np.allclose(bandwidth, expected, equal_nan=True)
+
+    def test_bandwidth_percent_calculation(self):
+        """Test bandwidth percentage (relative to middle band)."""
+        prices = np.linspace(100, 120, 100)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        bandwidth_pct = bb.get_bandwidth_percent(upper, middle, lower)
+
+        # Should have same length
+        assert len(bandwidth_pct) == len(prices)
+
+        # All valid values should be positive (upper > middle > lower)
+        valid_idx = ~np.isnan(bandwidth_pct)
+        assert np.all(bandwidth_pct[valid_idx] >= 0)
+
+    def test_bandwidth_expands_with_volatility(self):
+        """Test that bandwidth expands with increased volatility."""
+        # Low volatility data
+        prices_calm = np.full(100, 100.0)
+        prices_calm[:50] = np.linspace(100, 101, 50)  # Tiny variation
+
+        # High volatility data
+        prices_volatile = np.concatenate([
+            np.linspace(100, 110, 50),
+            np.linspace(110, 90, 50)
+        ])
+
+        bb = BollingerBands(period=20, num_std=2)
+
+        # Calm market
+        upper_calm, middle_calm, lower_calm = bb(prices_calm)
+        bw_calm = bb.get_bandwidth(upper_calm, lower_calm)
+        valid_bw_calm = bw_calm[~np.isnan(bw_calm)]
+
+        # Volatile market
+        upper_vol, middle_vol, lower_vol = bb(prices_volatile)
+        bw_vol = bb.get_bandwidth(upper_vol, lower_vol)
+        valid_bw_vol = bw_vol[~np.isnan(bw_vol)]
+
+        # Volatile market should have wider bands on average
+        assert np.mean(valid_bw_vol) > np.mean(valid_bw_calm)
+
+
+class TestBollingerBandsSignals:
+    """Test Bollinger Bands signal generation."""
+
+    def test_signal_generation_basic(self):
+        """Test basic signal generation from band touches."""
+        prices = np.linspace(100, 110, 100)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        signals = bb.get_signals(prices, upper, lower)
+
+        # Should have same length
+        assert len(signals) == len(prices)
+
+        # All signals should be -1, 0, or 1
+        assert np.all(np.isin(signals, [-1, 0, 1]))
+
+    def test_signal_nan_handling(self):
+        """Test that signals are 0 when bands are NaN."""
+        prices = np.array([100, 101, 102, 103, 104, 105])
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        signals = bb.get_signals(prices, upper, lower)
+
+        # When bands are NaN, signal should be 0
+        for i, (u, l) in enumerate(zip(upper, lower)):
+            if np.isnan(u) or np.isnan(l):
+                assert signals[i] == 0
+
+    def test_signal_overbought_touch_upper(self):
+        """Test overbought signal when price touches upper band."""
+        prices = np.linspace(100, 110, 100)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        # Modify prices to touch/exceed upper band
+        prices_modified = prices.copy()
+        prices_modified[50:] = upper[50:] + 0.1  # Exceed upper band
+
+        signals = bb.get_signals(prices_modified, upper, lower)
+
+        # Should have overbought signals where price > upper
+        valid_signals = signals[~np.isnan(upper)]
+        assert np.sum(valid_signals == 1) > 0
+
+    def test_signal_oversold_touch_lower(self):
+        """Test oversold signal when price touches lower band."""
+        prices = np.linspace(100, 110, 100)
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(prices)
+
+        # Modify prices to touch/go below lower band
+        prices_modified = prices.copy()
+        prices_modified[50:] = lower[50:] - 0.1  # Go below lower band
+
+        signals = bb.get_signals(prices_modified, upper, lower)
+
+        # Should have oversold signals where price < lower
+        valid_signals = signals[~np.isnan(lower)]
+        assert np.sum(valid_signals == -1) > 0
+
+    def test_signal_statistical_property_95_percent(self, sample_prices):
+        """Test that ~95% of prices fall within bands."""
+        bb = BollingerBands(period=20, num_std=2)
+        upper, middle, lower = bb(sample_prices)
+
+        # Count prices within bands (where bands are valid)
+        valid_idx = ~np.isnan(upper)
+        prices_valid = sample_prices[valid_idx]
+        upper_valid = upper[valid_idx]
+        lower_valid = lower[valid_idx]
+
+        # Check how many prices are within bands
+        within_bands = np.sum((prices_valid >= lower_valid) & (prices_valid <= upper_valid))
+        percent_within = (within_bands / len(prices_valid)) * 100
+
+        # Should be approximately 95% (allow some tolerance)
+        assert percent_within >= 90  # Allow some variance
