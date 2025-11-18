@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for daemon."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, ARRAY
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 
 from src.daemon.db import Base
@@ -17,8 +17,8 @@ class Signal(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False)
     signal = Column(String(10), nullable=False)  # 'BUY', 'SELL', 'HOLD'
     confidence = Column(Float, nullable=False)
-    key_factors = Column(ARRAY(String), nullable=True)
-    contradictions = Column(ARRAY(String), nullable=True)
+    key_factors = Column(JSON, nullable=True)  # Store as JSON for SQLite compatibility
+    contradictions = Column(JSON, nullable=True)  # Store as JSON for SQLite compatibility
     final_reasoning = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
