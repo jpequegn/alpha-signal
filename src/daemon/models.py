@@ -73,3 +73,40 @@ class ReasoningStep(Base):
 
     def __repr__(self):
         return f"<ReasoningStep({self.signal_id}, {self.indicator_group})>"
+
+
+class BackfillSignal(Base):
+    """Phase 3 enriched signal with risk assessment."""
+
+    __tablename__ = "backfill_signals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String(10), nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+
+    # Phase 2 Original Signal
+    signal = Column(String(10), nullable=False)  # 'BUY', 'SELL', 'HOLD'
+    confidence = Column(Float, nullable=False)  # Original confidence (0.0-1.0)
+    final_reasoning = Column(Text, nullable=True)  # Original reasoning
+
+    # Phase 3 Risk Factors (0.0-0.8 scale)
+    valuation_risk = Column(Float, nullable=False)
+    volatility_risk = Column(Float, nullable=False)
+    breadth_risk = Column(Float, nullable=False)
+    momentum_risk = Column(Float, nullable=False)
+
+    # Phase 3 Bubble Assessment
+    bubble_probability = Column(Float, nullable=False)  # 0.0-1.0
+    risk_reasoning = Column(Text, nullable=True)  # Why is market in this regime?
+
+    # Adjusted Confidence
+    adjusted_confidence = Column(Float, nullable=False)  # original × (1 - bubble_prob)
+    risk_adjusted_reasoning = Column(Text, nullable=True)  # Reasoning with risk caveat
+
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    def __repr__(self):
+        return (
+            f"<BackfillSignal({self.symbol}, {self.timestamp}, {self.signal}, "
+            f"orig_conf={self.confidence:.2f}, adj_conf={self.adjusted_confidence:.2f})>"
+        )
